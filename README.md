@@ -32,7 +32,7 @@ NVR ──RTSP──▶ go2rtc ──▶ cctv-server ──▶ browser
 
 ## Install
 
-Download the latest zip from [Releases](../../releases). It includes the server for macOS (Apple Silicon and Intel) and Linux (x86-64 and ARM64).
+Download from [Releases](../../releases): the **-mac.zip** for macOS (Apple Silicon and Intel), or the **-docker.zip** for Docker, Synology or Linux (x86-64 and ARM64).
 
 ### Mac
 
@@ -42,7 +42,7 @@ Download the latest zip from [Releases](../../releases). It includes the server 
 
 ### Docker / Synology
 
-1. Copy the unzipped folder to the host, e.g. `/volume1/docker/hikvision-web-viewer`.
+1. Copy the unzipped `-docker.zip` folder to the host, e.g. `/volume1/docker/hikvision-web-viewer`.
 2. In `docker-compose.yml`, set `VIEWER_PASSWORD`. The viewer won't start while it's still `change-me`. Delete the line to run without a login.
 3. Start it:
    - **DSM 7.2+:** Container Manager → Project → Create → choose the folder → *Use existing docker-compose.yml*.
