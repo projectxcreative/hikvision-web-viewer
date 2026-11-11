@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hikvision Web Viewer</title>
+<style>
+  :root{
+    --bg:#0e1013; --panel:#171a1f; --panel2:#1f232a; --line:#2a2f37;
+    --text:#e8eaed; --muted:#9aa0a8; --accent:#e5484d; --accent2:#3b82f6; --ok:#30a46c;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  button,input,select{font:inherit;color:inherit}
+  button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+  button:hover{border-color:#3a414c}
+  button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  button.rec{background:var(--accent);border-color:var(--accent);color:#fff}
+  input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  input:focus,select:focus{outline:2px solid var(--accent2);outline-offset:-1px}
+
+  header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+  nav{display:flex;gap:4px}
+  nav button{background:none;border:none;color:var(--muted);padding:6px 12px}
+  nav button.active{color:var(--text);background:var(--panel2);border-radius:8px}
+  header .spacer{flex:1}
+  #status{color:var(--muted);font-size:12px}
+
+  main{height:calc(100% - 53px);padding:12px}
+  .view{display:none;height:100%}
+  .view.active{display:flex;flex-direction:column;gap:12px}
+
+  .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:8px;min-height:0}
+  .grid.single{grid-template-columns:1fr}
+  .tile{position:relative;background:#000;border-radius:var(--radius);overflow:hidden;min-height:0}
+  .tile video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+  .tile .label{position:absolute;left:10px;top:8px;font-weight:600;font-size:13px;text-shadow:0 1px 3px #000}
+  .tile .msg{position:absolute;inset:0;white-space:pre-line;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px;pointer-events:none}
+  .tile .bar{position:absolute;right:8px;top:6px;display:flex;gap:6px;opacity:0;transition:opacity .15s}
+  .tile:hover .bar,.tile .bar.recording{opacity:1}
+  .tile .bar button{background:rgba(20,22,26,.8);backdrop-filter:blur(4px);padding:4px 10px;font-size:12px}
+  .tile .bar button.rec{background:var(--accent)}
+  .tile .clock{position:absolute;left:10px;bottom:8px;font:600 13px ui-monospace,Menlo,monospace;text-shadow:0 1px 3px #000}
+  .tile .q{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--muted);text-shadow:0 1px 3px #000}
+
+  .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px}
+  .toolbar label{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px}
+  .toolbar .sep{width:1px;height:24px;background:var(--line);margin:0 4px}
+  .hint{color:var(--muted);font-size:12px}
+
+  dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:0;width:min(520px,calc(100vw - 32px))}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  dialog form{padding:20px;display:grid;gap:12px}
+  dialog h2{margin:0;font-size:16px}
+  dialog .row{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:10px}
+  dialog .row label{color:var(--muted);font-size:13px}
+  dialog .cams{display:grid;grid-template-columns:1fr 90px;gap:6px}
+  dialog .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);
+    padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+  #toast.show{opacity:1}
+
+  .timeline{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px 10px;display:grid;gap:6px;user-select:none}
+  .tl-row{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:10px;cursor:pointer}
+  .tl-row .nm{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-row.sel .nm{color:var(--text);font-weight:600}
+  .tl-bar{position:relative;height:22px;background:var(--bg);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .tl-row.sel .tl-bar{border-color:#46505d}
+  .tl-seg{position:absolute;top:2px;bottom:2px;min-width:2px;border-radius:2px;background:var(--k-other)}
+  .tl-seg.motion{background:var(--k-motion)}
+  .tl-seg.active{outline:2px solid #fff}
+  .tl-head{position:relative;height:14px;margin-left:120px;font-size:10px;color:var(--muted)}
+  .tl-head span{position:absolute;transform:translateX(-50%)}
+  .tl-grid{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.05)}
+  .tl-head-play,.tl-play{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 4px #000;pointer-events:none}
+  .tl-hover{position:fixed;background:var(--panel2);border:1px solid var(--line);padding:3px 8px;border-radius:6px;font-size:12px;pointer-events:none;display:none;z-index:5}
+  :root{--k-motion:#f5a524;--k-other:#3b82f6}
+  .legend{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:6px}
+  .legend .k-motion{background:var(--k-motion)} .legend .k-other{background:var(--k-other)}
+  .pbmain{flex:1;min-height:0;display:grid;grid-template-columns:1fr 300px;gap:12px}
+  .pbplayer{display:flex;flex-direction:column;gap:8px;min-height:0}
+  .toolbar.slim{padding:6px 8px}
+  .toolbar .auto{color:var(--muted);font-size:12px}
+  .cliplist{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-height:0}
+  .cliphead{padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px}
+  .clips{overflow:auto;flex:1}
+  .clip{display:grid;grid-template-columns:8px 1fr auto;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+  .clip:hover{background:var(--panel2)}
+  .clip.active{background:#1d2a3d}
+  .clip .dot{width:8px;height:8px;border-radius:50%;background:var(--k-other)}
+  .clip .dot.motion{background:var(--k-motion)}
+  .clip .t{font:13px ui-monospace,Menlo,monospace}
+  .clip .d{font-size:11px;color:var(--muted)}
+  .clip button{padding:3px 8px;font-size:12px}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  @media (max-width:900px){.pbmain{grid-template-columns:1fr}.cliplist{max-height:260px}}
+
+  .datepick{position:relative}
+  #dateBtn{display:flex;align-items:center;gap:8px;min-width:170px}
+  .calicon{width:14px;height:14px;border:1.5px solid currentColor;border-radius:3px;position:relative;opacity:.8}
+  .calicon::before{content:"";position:absolute;left:-1.5px;right:-1.5px;top:2px;border-top:1.5px solid currentColor}
+  .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:12px;width:292px;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .cal-head b{font-size:14px}
+  .cal-head button{padding:3px 10px}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .cal-grid .wd{font-size:11px;color:var(--muted);text-align:center;padding:2px 0}
+  .cal-grid button{position:relative;padding:0;height:36px;border-radius:8px;background:none;border:1px solid transparent;font-size:13px}
+  .cal-grid button:hover:not(:disabled){background:var(--panel2)}
+  .cal-grid button.has{font-weight:600}
+  .cal-grid button.has::after{content:"";position:absolute;left:50%;bottom:4px;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:var(--k-motion)}
+  .cal-grid button.today{border-color:#46505d}
+  .cal-grid button.sel{background:var(--accent2);color:#fff}
+  .cal-grid button.sel::after{background:#fff}
+  .cal-grid button:disabled{color:#4a515b;cursor:default}
+  .cal-foot{margin-top:8px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .cal-foot i{width:6px;height:6px;border-radius:50%;background:var(--k-motion);display:inline-block}
+  .speeds{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .speeds button{border:none;border-radius:0;padding:5px 9px;font-size:12px;background:var(--panel2)}
+  .speeds button+button{border-left:1px solid var(--line)}
+  .speeds button.on{background:var(--accent2);color:#fff}
+  @media (max-width:700px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">NVR</h1>
+  <nav>
+    <button data-view="live" class="active">Live</button>
+    <button data-view="playback">Playback</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="status"></span>
+  <button id="settingsBtn">Settings</button>
+</header>
+
+<main>
+  <section class="view active" id="view-live">
+    <div class="grid" id="liveGrid"></div>
+  </section>
+
+  <section class="view" id="view-playback">
+    <div class="toolbar">
+      <button id="dayPrev" title="Previous day">◀</button>
+      <div class="datepick">
+        <button id="dateBtn" aria-haspopup="dialog" aria-expanded="false"><span class="calicon" aria-hidden="true"></span><span id="dateLabel"></span></button>
+        <div class="cal" id="cal" hidden></div>
+      </div>
+      <button id="dayNext" title="Next day">▶</button>
+      <button id="dayToday">Today</button>
+      <button id="dayRefresh" title="Search the NVR again">Refresh</button>
+      <span class="hint" id="dayStatus"></span>
+      <div class="spacer" style="flex:1"></div>
+      <span class="legend"><i class="k-motion"></i>Motion <i class="k-other"></i>Other</span>
+    </div>
+    <div class="timeline" id="timeline"></div>
+    <div class="pbmain">
+      <div class="pbplayer">
+        <div class="grid single" id="pbGrid"></div>
+        <div class="toolbar slim">
+          <button id="clipPrev">◀ Prev clip</button>
+          <button id="back30">−30s</button>
+          <button id="fwd30">+30s</button>
+          <button id="clipNext">Next clip ▶</button>
+          <label class="auto"><input type="checkbox" id="autoNext" checked> Auto-play next</label>
+          <div class="speeds" role="group" aria-label="Playback speed" id="speeds"></div>
+          <div class="spacer" style="flex:1"></div>
+          <button id="clipDl">Download this clip</button>
+        </div>
+      </div>
+      <aside class="cliplist">
+        <div class="cliphead" id="clipHead">Clips</div>
+        <div class="clips" id="clipList"></div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h2>NVR connection</h2>
+    <div class="row"><label for="sHost">NVR address</label><input id="sHost" required></div>
+    <div class="row"><label for="sPort">RTSP port</label><input id="sPort" type="number" required></div>
+    <div class="row"><label for="sUser">Username</label><input id="sUser" autocomplete="username" required></div>
+    <div class="row"><label for="sPass">Password</label><input id="sPass" type="password" autocomplete="new-password"></div>
+    <div class="row"><label>Cameras</label><div class="hint">Name and NVR channel number</div></div>
+    <div class="cams" id="sCams"></div>
+    <div class="hint">Saved on the machine running the viewer, never in the browser. Video goes NVR → viewer server → this page; nothing leaves your network.</div>
+    <div class="actions">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" value="save" id="sSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ---------- settings (stored on the server, password never sent back) ---------- */
+let cfg = {host: '', port: 554, user: '', hasLogin: false, cams: []};
+async function loadCfg() {
+  const r = await fetch('/cfg', {cache: 'no-store'});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  cfg = await r.json();
+}
+async function saveCfg(c) {
+  const r = await fetch('/cfg', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(c)});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  await loadCfg();
+}
+// one-off: move a login saved in this browser by the first version onto the server
+async function migrateOldLogin() {
+  let old = null;
+  try { old = JSON.parse(localStorage.getItem('cctv-cfg') || 'null'); } catch {}
+  if (!old) return;
+  if (!cfg.hasLogin && old.user && old.pass) {
+    try { await saveCfg({host: old.host || cfg.host, port: old.port || 554, user: old.user, pass: old.pass, cams: old.cams || cfg.cams}); } catch { return; }
+  }
+  try { localStorage.removeItem('cctv-cfg'); } catch {}
+}
+
+// The server swaps these names for real stream URLs with the NVR login.
+// Hikvision: channel N main stream = N01, sub stream = N02
+const liveSrc = (ch, sub) => `nvr:/Streaming/Channels/${ch}0${sub ? 2 : 1}`;
+// Hikvision playback wants NVR-local time written with a trailing Z
+const hikTime = (d, z = 'Z') => {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${z}`;
+};
+const playbackSrc = (ch, start, end) =>
+  `nvr:/Streaming/tracks/${ch}01?starttime=${hikTime(start)}` + (end ? `&endtime=${hikTime(end)}` : '');
+// any-speed playback: the server downloads the clip and paces it
+const fastSrc = (clip, from, speed) =>
+  'fast:' + new URLSearchParams({uri: clip.uri, from: hikTime(from, ''), speed: String(speed),
+    secs: String(Math.max(1, Math.round((clip.end - from) / 1000)))});
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+function toast(msg, ms = 2500) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), ms);
+}
+const stamp = d => {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+};
+const safe = s => s.replace(/[^\w-]+/g, '_');
+function download(blob, name) {
+  const a = el('a', {href: URL.createObjectURL(blob), download: name});
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+const MAX_REC_SECS = 1800; // 30 min cap per recording
+const fmtMB = n => (n / 1048576).toFixed(1) + ' MB';
+
+/* ---------- MSE player (go2rtc websocket protocol) ---------- */
+const CODECS = ['avc1.640029', 'avc1.64002A', 'avc1.640033', 'hvc1.1.6.L153.B0', 'mp4a.40.2', 'mp4a.40.5', 'flac', 'opus'];
+
+class Player {
+  constructor(video, onMsg) {
+    this.video = video; this.onMsg = onMsg;
+    this.src = null; this.ws = null; this.retry = null; this.live = true;
+    this.firstTs = null;
+  }
+  play(src, {live = true, fallback = null, onEnd = null} = {}) {
+    this.stop();
+    this.src = src; this.live = live; this.firstTs = null; this.errored = false;
+    this.opts = {live, fallback, onEnd};
+    this.onMsg('Connecting…');
+    const ws = this.ws = new WebSocket(`ws://${location.host}/api/ws?src=${encodeURIComponent(src)}`);
+    ws.binaryType = 'arraybuffer';
+    const ms = new MediaSource();
+    let sb = null; const queue = [];
+    ws.onopen = () => {
+      this.video.src = URL.createObjectURL(ms);
+      ms.addEventListener('sourceopen', () => {
+        URL.revokeObjectURL(this.video.src);
+        const codecs = CODECS.filter(c => MediaSource.isTypeSupported(`video/mp4; codecs="${c}"`)).join();
+        ws.send(JSON.stringify({type: 'mse', value: codecs}));
+      }, {once: true});
+    };
+    ws.onmessage = ev => {
+      if (typeof ev.data === 'string') {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'mse') {
+          try {
+            sb = ms.addSourceBuffer(msg.value);
+            sb.mode = 'segments';
+            sb.addEventListener('updateend', () => {
+              if (!sb.updating && queue.length) { try { sb.appendBuffer(queue.shift()); } catch {} }
+              this.tidy(sb);
+            });
+          } catch (e) { this.onMsg('This browser cannot play this stream: ' + msg.value); }
+        } else if (msg.type === 'error') {
+          this.errored = true;
+          if (fallback) { this.play(fallback, {live, onEnd}); return; } // e.g. camera has no sub stream
+          this.onMsg(niceError(msg.value));
+        }
+        return;
+      }
+      if (!sb) return;
+      if (sb.updating || queue.length) queue.push(ev.data);
+      else { try { sb.appendBuffer(ev.data); } catch {} }
+    };
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      if (this.live) {
+        if (!this.errored) this.onMsg('Reconnecting…');
+        this.retry = setTimeout(() => this.play(this.src, this.opts), this.errored ? 10000 : 3000);
+      } else if (!this.errored) {
+        if (onEnd) onEnd(); else this.onMsg('End of recording');
+      }
+    };
+    this.video.onplaying = () => this.onMsg('');
+    this.video.muted = true;
+    this.video.play().catch(() => {});
+  }
+  tidy(sb) {
+    const v = this.video, b = v.buffered;
+    if (!b.length) return;
+    const start = b.start(0), end = b.end(b.length - 1);
+    if (this.firstTs === null) this.firstTs = start;
+    if (v.paused && !v.ended) v.play().catch(() => {});
+    // keep latency low: jump to near the live edge when we fall behind
+    if (end - v.currentTime > (this.live ? 1.5 : 4)) v.currentTime = end - 0.4;
+    // drop old buffer so memory stays flat
+    if (!sb.updating && v.currentTime - start > 20) { try { sb.remove(start, v.currentTime - 10); } catch {} }
+  }
+  stop() {
+    clearTimeout(this.retry);
+    if (this.ws) { const ws = this.ws; this.ws = null; ws.onclose = null; ws.close(); }
+    this.video.removeAttribute('src'); this.video.load();
+  }
+}
+
+function niceError(e) {
+  const s = String(e);
+  if (/401|unauthor/i.test(s)) return 'NVR rejected the username or password — check Settings';
+  if (/404|not found|454|453/i.test(s)) return 'No stream / no recording at that time';
+  if (/wrong response on DESCRIBE/i.test(s)) return 'NVR refused this stream (it may not exist, or the NVR is at its connection limit)\n' + s;
+  if (/timeout|refused|no route|i\/o/i.test(s)) return 'No answer from the NVR — it may have no recording at that time, or be unreachable\n' + s;
+  if (/codecs not matched/i.test(s)) return 'This browser can\'t decode this camera\'s video format (H.265) — use Chrome or Safari on the Mac';
+  return s;
+}
+
+/* ---------- snapshot & recording ---------- */
+function snapshot(video, camName) {
+  if (!video.videoWidth) return toast('No picture yet');
+  const c = el('canvas', {width: video.videoWidth, height: video.videoHeight});
+  c.getContext('2d').drawImage(video, 0, 0);
+  c.toBlob(b => { download(b, `${safe(camName)}_${stamp(new Date())}.jpg`); toast('Snapshot saved'); }, 'image/jpeg', 0.95);
+}
+
+// Records the original camera stream (no re-encoding) via go2rtc's fMP4 endpoint.
+class Recorder {
+  constructor(src, name, onTick) { this.src = src; this.name = name; this.onTick = onTick; this.bytes = 0; this.chunks = []; }
+  async start() {
+    this.ctrl = new AbortController(); this.t0 = new Date();
+    try {
+      // duration also stops go2rtc redirecting Safari-like browsers to HLS
+      const res = await fetch(`/api/stream.mp4?src=${encodeURIComponent(this.src)}&duration=${MAX_REC_SECS}`, {signal: this.ctrl.signal});
+      if (!res.ok) throw new Error(await res.text());
+      const reader = res.body.getReader();
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        this.chunks.push(value); this.bytes += value.length; this.onTick(this.bytes);
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') toast('Recording failed: ' + niceError(e.message));
+    }
+    this.finish();
+  }
+  stop() { this.ctrl && this.ctrl.abort(); }
+  finish() {
+    if (this.done) return; this.done = true;
+    const all = new Uint8Array(this.bytes); let o = 0;
+    for (const c of this.chunks) { all.set(c, o); o += c.length; }
+    this.chunks = [];
+    const end = completeBoxes(all);
+    if (end < 1000) return toast('Nothing recorded');
+    download(new Blob([all.subarray(0, end)], {type: 'video/mp4'}), `${safe(this.name)}_${stamp(this.t0)}.mp4`);
+    toast(`Clip saved (${fmtMB(end)})`);
+  }
+}
+// Cut a fragmented MP4 at the last complete moof+mdat so the file isn't truncated mid-frame.
+function completeBoxes(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let off = 0, good = 0;
+  while (off + 8 <= u8.length) {
+    let size = dv.getUint32(off);
+    const type = String.fromCharCode(u8[off+4], u8[off+5], u8[off+6], u8[off+7]);
+    if (size === 1) { if (off + 16 > u8.length) break; size = Number(dv.getBigUint64(off + 8)); }
+    if (size < 8 || off + size > u8.length) break;
+    off += size;
+    if (type === 'mdat' || type === 'moov') good = off;
+  }
+  return good;
+}
+
+/* ---------- tiles ---------- */
+function makeTile(cam, {live, onExpand}) {
+  const video = el('video', {muted: true, playsInline: true, autoplay: true});
+  const msg = el('div', {className: 'msg'});
+  const clock = el('div', {className: 'clock'});
+  const q = el('div', {className: 'q'});
+  const snapBtn = el('button', {textContent: 'Snapshot', onclick: e => { e.stopPropagation(); snapshot(video, cam.name); }});
+  const recBtn = el('button', {textContent: 'Record'});
+  const bar = el('div', {className: 'bar'}, snapBtn, recBtn);
+  if (onExpand) bar.append(el('button', {textContent: '⤢', title: 'Expand / collapse', onclick: e => { e.stopPropagation(); onExpand(); }}));
+  const label = el('div', {className: 'label', textContent: cam.name});
+  const tile = el('div', {className: 'tile'}, video, label, msg, clock, q, bar);
+  if (onExpand) tile.ondblclick = onExpand;
+  const player = new Player(video, t => { msg.textContent = t; });
+
+  let rec = null;
+  tile.recordSrc = () => player.src;
+  recBtn.onclick = e => {
+    e.stopPropagation();
+    if (rec) { rec.stop(); return; }
+    const src = tile.recordSrc();
+    if (!src) return toast('Nothing playing');
+    rec = new Recorder(src, cam.name, b => { recBtn.textContent = `■ Stop · ${fmtMB(b)}`; });
+    recBtn.classList.add('rec'); bar.classList.add('recording'); recBtn.textContent = '■ Stop';
+    rec.start().then(() => {
+      rec = null;
+      recBtn.classList.remove('rec'); bar.classList.remove('recording'); recBtn.textContent = 'Record';
+    });
+  };
+  tile.stopRec = () => rec && rec.stop();
+  return {tile, video, player, clock, q, msg, label};
+}
+
+/* ---------- live view ---------- */
+let liveTiles = [], expanded = null;
+function buildLive() {
+  liveTiles.forEach(t => { t.player.stop(); t.tile.stopRec(); });
+  const grid = $('#liveGrid'); grid.replaceChildren(); liveTiles = [];
+  grid.classList.toggle('single', expanded !== null);
+  cfg.cams.forEach((cam, i) => {
+    if (expanded !== null && expanded !== i) return;
+    const t = makeTile(cam, {live: true, onExpand: () => { expanded = expanded === null ? i : null; buildLive(); }});
+    const sub = expanded === null; // grid = substream, expanded = full quality
+    t.q.textContent = sub ? 'sub stream' : 'main stream';
+    // recording always grabs the full-quality main stream
+    t.tile.recordSrc = () => liveSrc(cam.ch, false);
+    grid.append(t.tile);
+    if (configured()) t.player.play(liveSrc(cam.ch, sub), {live: true, fallback: sub ? liveSrc(cam.ch, false) : null});
+    else t.msg.textContent = 'Open Settings to enter the NVR login';
+    liveTiles.push(t);
+  });
+}
+function stopLive() { liveTiles.forEach(t => t.player.stop()); }
+
+/* ---------- playback: day timeline + clip list ---------- */
+
+const p2 = n => String(n).padStart(2, '0');
+const dayStr = d => `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+const hms = d => `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+const fmtDur = s => s >= 3600 ? `${Math.floor(s/3600)}h ${Math.round(s%3600/60)}m`
+  : s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.max(1, Math.round(s))}s`;
+const isMotion = t => /motion|vmd/i.test(t);
+const typeLabel = t => isMotion(t) ? 'motion' : /timing|schedule|continu/i.test(t) ? 'continuous' : (t || 'recording');
+
+let pb = null, day = dayStr(new Date()), clips = [], selCam = 0, curClip = null;
+let pbStart = null, pbClockTimer = null, tlPlayEls = [];
+const dayCache = new Map(); // day -> {t, list}
+
+function buildPlayback() {
+  if (!pb) {
+    pb = makeTile({get name() { return cfg.cams[selCam].name; }}, {live: false});
+    pb.msg.textContent = 'Click a coloured block on the timeline, or a clip in the list';
+    $('#pbGrid').append(pb.tile);
+    renderSpeeds(); setDayLabel();
+  }
+  loadDay();
+}
+
+async function loadDay(force) {
+  setDayLabel();
+  const cached = dayCache.get(day);
+  const fresh = cached && (day !== dayStr(new Date()) || Date.now() - cached.t < 60e3);
+  clips = cached ? cached.list : [];
+  renderTimeline(); renderClips();
+  if (!configured()) { $('#dayStatus').textContent = 'Enter the NVR login in Settings'; return; }
+  if (fresh && !force) { setDayStatus(); return; }
+  $('#dayStatus').textContent = 'Searching the NVR…';
+  const reqDay = day; const [d0, span] = dayBounds();
+  try {
+    const res = await fetch('/search', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tracks: cfg.cams.map(c => c.ch * 100 + 1), start: reqDay + 'T00:00:00', end: reqDay + 'T23:59:59'}),
+    });
+    const j = await res.json().catch(() => ({error: 'HTTP ' + res.status}));
+    if (!res.ok || j.error) throw new Error(j.error || 'HTTP ' + res.status);
+    const list = j.clips.map(c => ({
+      cam: cfg.cams.findIndex(x => x.ch * 100 + 1 === c.track),
+      start: new Date(c.start), end: new Date(c.end), type: c.type, uri: c.uri,
+    })).filter(c => c.cam >= 0 && c.end > c.start && c.end > d0 && c.start - d0 < span).sort((a, b) => a.start - b.start);
+    dayCache.set(reqDay, {t: Date.now(), list});
+    if (reqDay !== day) return;
+    clips = list; setDayStatus();
+  } catch (e) {
+    if (reqDay !== day) return;
+    $('#dayStatus').textContent = e instanceof TypeError ? 'Viewer server not responding' : 'Search failed: ' + e.message;
+  }
+  renderTimeline(); renderClips();
+}
+function setDayStatus() {
+  const n = clips.length, cams = new Set(clips.map(c => c.cam)).size;
+  $('#dayStatus').textContent = n ? `${n} clip${n > 1 ? 's' : ''} on ${cams} camera${cams > 1 ? 's' : ''}` : 'No recordings on this day';
+}
+
+function dayBounds() {
+  const d0 = new Date(day + 'T00:00:00'), d1 = new Date(d0); d1.setDate(d1.getDate() + 1);
+  return [d0, d1 - d0];
+}
+
+function renderTimeline() {
+  const tl = $('#timeline'); const [d0, span] = dayBounds();
+  const pct = t => Math.min(100, Math.max(0, (t - d0) / span * 100));
+  const head = el('div', {className: 'tl-head'});
+  for (let h = 0; h <= 24; h += 3) head.append(el('span', {textContent: p2(h) + ':00', style: `left:${h / 24 * 100}%;transform:translateX(${h ? h === 24 ? -100 : -50 : 0}%)`}));
+  const hover = $('.tl-hover') || document.body.appendChild(el('div', {className: 'tl-hover'}));
+  tlPlayEls = [];
+  const rows = cfg.cams.map((cam, i) => {
+    const bar = el('div', {className: 'tl-bar'});
+    for (let h = 3; h < 24; h += 3) bar.append(el('div', {className: 'tl-grid', style: `left:${h / 24 * 100}%`}));
+    clips.filter(c => c.cam === i).forEach(c => {
+      const seg = el('div', {className: 'tl-seg' + (isMotion(c.type) ? ' motion' : '') + (c === curClip ? ' active' : '')});
+      seg.style.left = pct(c.start) + '%'; seg.style.width = (pct(c.end) - pct(c.start)) + '%';
+      bar.append(seg);
+    });
+    const play = el('div', {className: 'tl-play', style: 'display:none'}); bar.append(play); tlPlayEls[i] = play;
+    const timeAt = ev => { const r = bar.getBoundingClientRect(); return new Date(+d0 + (ev.clientX - r.left) / r.width * span); };
+    bar.onmousemove = ev => {
+      const t = timeAt(ev), c = clips.find(c => c.cam === i && c.start <= t && t < c.end);
+      hover.textContent = hms(t) + (c ? ` · ${typeLabel(c.type)} clip ${hms(c.start)}–${hms(c.end)}` : '');
+      hover.style.display = 'block'; hover.style.left = (ev.clientX + 12) + 'px'; hover.style.top = (ev.clientY + 14) + 'px';
+    };
+    bar.onmouseleave = () => { hover.style.display = 'none'; };
+    bar.onclick = ev => {
+      const t = timeAt(ev); const mine = clips.filter(c => c.cam === i);
+      selCam = i;
+      const c = mine.find(c => c.start <= t && t < c.end) || mine.find(c => c.start > t) || mine[mine.length - 1];
+      if (c) playClip(c, t); else { curClip = null; renderTimeline(); renderClips(); toast(`No recordings for ${cam.name} on this day`); }
+    };
+    const row = el('div', {className: 'tl-row' + (i === selCam ? ' sel' : '')}, el('div', {className: 'nm', textContent: cam.name}), bar);
+    row.querySelector('.nm').onclick = () => { selCam = i; renderTimeline(); renderClips(); };
+    return row;
+  });
+  tl.replaceChildren(head, ...rows);
+  updatePlayhead();
+}
+
+function updatePlayhead() {
+  const [d0, span] = dayBounds();
+  tlPlayEls.forEach((e, i) => {
+    const t = pb && pb.current;
+    const on = t && i === (curClip ? curClip.cam : -1) && t >= d0 && t - d0 < span;
+    e.style.display = on ? 'block' : 'none';
+    if (on) e.style.left = ((t - d0) / span * 100) + '%';
+  });
+}
+
+function renderClips() {
+  const cam = cfg.cams[selCam]; const mine = clips.filter(c => c.cam === selCam);
+  $('#clipHead').textContent = `${cam.name} · ${mine.length} clip${mine.length === 1 ? '' : 's'}`;
+  const list = $('#clipList');
+  if (!mine.length) { list.replaceChildren(el('div', {className: 'empty', textContent: 'No clips for this camera on this day.'})); return; }
+  list.replaceChildren(...mine.map(c => {
+    const dl = el('button', {textContent: '⬇', title: 'Download this clip', onclick: e => { e.stopPropagation(); downloadClip(c); }});
+    const row = el('div', {className: 'clip' + (c === curClip ? ' active' : ''), onclick: () => playClip(c)},
+      el('div', {className: 'dot' + (isMotion(c.type) ? ' motion' : '')}),
+      el('div', {}, el('div', {className: 't', textContent: `${hms(c.start)} – ${hms(c.end)}`}),
+        el('div', {className: 'd', textContent: `${fmtDur((c.end - c.start) / 1000)} · ${typeLabel(c.type)}`})),
+      dl);
+    if (c === curClip) setTimeout(() => row.scrollIntoView({block: 'nearest'}), 0);
+    return row;
+  }));
+}
+
+function playClip(c, at) {
+  if (!configured()) return openSettings();
+  selCam = c.cam; curClip = c;
+  const start = at && at > c.start && at < c.end ? at : c.start;
+  const cam = cfg.cams[c.cam];
+  pbStart = start; pb.current = start;
+  const sp = c.uri ? speed : 1; pb.speed = sp;
+  pb.label.textContent = cam.name;
+  pb.q.textContent = `${typeLabel(c.type)} clip ${hms(c.start)}–${hms(c.end)}` + (sp !== 1 ? ` · ${sp}×` : '');
+  pb.clock.textContent = start.toLocaleString('en-GB');
+  pb.player.play(sp === 1 ? playbackSrc(cam.ch, start, c.end) : fastSrc(c, start, sp), {live: false, onEnd: () => {
+    const n = neighbour(c, 1);
+    if ($('#autoNext').checked && n) playClip(n); else pb.msg.textContent = 'End of clip';
+  }});
+  clearInterval(pbClockTimer);
+  pbClockTimer = setInterval(() => {
+    const v = pb.video;
+    if (pb.player.firstTs === null || !v.currentTime) return;
+    pb.current = new Date(Math.min(+curClip.end, pbStart.getTime() + (v.currentTime - pb.player.firstTs) * 1000 * pb.speed));
+    pb.clock.textContent = pb.current.toLocaleString('en-GB');
+    updatePlayhead();
+  }, 250);
+  renderTimeline(); renderClips();
+}
+function neighbour(c, dir) {
+  const mine = clips.filter(x => x.cam === c.cam); const i = mine.indexOf(c);
+  return mine[i + dir] || null;
+}
+function seek(secs) {
+  if (!curClip) return toast('Play a clip first');
+  const t = new Date(+(pb.current || curClip.start) + secs * 1000);
+  if (t >= curClip.start && t < curClip.end) return playClip(curClip, t);
+  const n = neighbour(curClip, secs > 0 ? 1 : -1);
+  if (!n) return toast(secs > 0 ? 'That’s the last clip' : 'That’s the first clip');
+  playClip(n, secs > 0 ? n.start : new Date(Math.max(+n.start, +n.end + secs * 1000)));
+}
+function downloadClip(c) {
+  if (!configured()) return openSettings();
+  const cam = cfg.cams[c.cam]; const name = `${safe(cam.name)}_${stamp(c.start)}.mp4`;
+  const secs = Math.max(1, Math.round((c.end - c.start) / 1000));
+  // the server pulls the clip from the NVR at full speed and saves it as MP4
+  const url = c.uri
+    ? '/download?' + new URLSearchParams({uri: c.uri, from: hikTime(c.start, ''), to: hikTime(c.end, ''), secs: String(secs), name})
+    : `/api/stream.mp4?src=${encodeURIComponent(playbackSrc(cam.ch, c.start, c.end))}&duration=${secs}&filename=${encodeURIComponent(name)}`;
+  const a = el('a', {href: url, download: name}); document.body.append(a); a.click(); a.remove();
+  toast(`Downloading ${fmtDur(secs)} clip…`, 4000);
+}
+function setDay(str) { day = str; closeCal(); loadDay(); }
+function setDayLabel() {
+  $('#dateLabel').textContent = new Date(day + 'T12:00:00').toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'});
+}
+const shiftDay = n => { const d = new Date(day + 'T12:00:00'); d.setDate(d.getDate() + n); setDay(dayStr(d)); };
+$('#dayPrev').onclick = () => shiftDay(-1);
+$('#dayNext').onclick = () => shiftDay(1);
+$('#dayToday').onclick = () => setDay(dayStr(new Date()));
+$('#dayRefresh').onclick = () => loadDay(true);
+
+/* ---------- calendar ---------- */
+const monthCache = new Map(); // 'YYYY-MM' -> {t, days: {dayOfMonth: [tracks]}} or {error}
+let calMonth = null;
+function openCal() {
+  const d = new Date(day + 'T12:00:00'); calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  $('#cal').hidden = false; $('#dateBtn').setAttribute('aria-expanded', 'true');
+  renderCal(); loadMonth();
+}
+function closeCal() { $('#cal').hidden = true; $('#dateBtn').setAttribute('aria-expanded', 'false'); }
+$('#dateBtn').onclick = e => { e.stopPropagation(); $('#cal').hidden ? openCal() : closeCal(); };
+document.addEventListener('click', e => { if (!$('#cal').hidden && !e.target.closest('.datepick')) closeCal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#cal').hidden) closeCal(); });
+const monthKey = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}`;
+
+async function loadMonth() {
+  const m = new Date(calMonth), key = monthKey(m), c = monthCache.get(key);
+  const isNow = key === monthKey(new Date());
+  if (c && !c.error && (!isNow || Date.now() - c.t < 120e3)) return;
+  if (!configured()) return;
+  try {
+    const r = await fetch('/month', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tracks: cfg.cams.map(x => x.ch * 100 + 1), year: m.getFullYear(), month: m.getMonth() + 1})});
+    const j = await r.json().catch(() => ({error: 'HTTP ' + r.status}));
+    if (!r.ok || j.error) throw new Error(j.error || 'HTTP ' + r.status);
+    monthCache.set(key, {t: Date.now(), days: j.days || {}});
+  } catch (e) { monthCache.set(key, {t: Date.now(), error: e.message}); }
+  if (calMonth && monthKey(calMonth) === key) renderCal();
+}
+
+function renderCal() {
+  const cal = $('#cal'), m = calMonth, info = monthCache.get(monthKey(m));
+  const today = dayStr(new Date());
+  const head = el('div', {className: 'cal-head'},
+    el('button', {textContent: '◀', title: 'Previous month', onclick: e => { e.stopPropagation(); calMonth = new Date(m.getFullYear(), m.getMonth() - 1, 1); renderCal(); loadMonth(); }}),
+    el('b', {textContent: m.toLocaleDateString('en-GB', {month: 'long', year: 'numeric'})}),
+    el('button', {textContent: '▶', title: 'Next month', disabled: monthKey(m) >= monthKey(new Date()),
+      onclick: e => { e.stopPropagation(); calMonth = new Date(m.getFullYear(), m.getMonth() + 1, 1); renderCal(); loadMonth(); }}));
+  const grid = el('div', {className: 'cal-grid'}, ...['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(w => el('div', {className: 'wd', textContent: w})));
+  const lead = (m.getDay() + 6) % 7;
+  for (let i = 0; i < lead; i++) grid.append(el('div'));
+  const nDays = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+  for (let d = 1; d <= nDays; d++) {
+    const ds = `${monthKey(m)}-${p2(d)}`;
+    const tracks = info && info.days ? info.days[d] : null;
+    const names = tracks ? tracks.map(t => (cfg.cams.find(c => c.ch * 100 + 1 === t) || {}).name).filter(Boolean) : [];
+    const b = el('button', {textContent: d, disabled: ds > today,
+      title: names.length ? 'Recordings: ' + names.join(', ') : '',
+      onclick: e => { e.stopPropagation(); setDay(ds); }});
+    if (names.length) b.classList.add('has');
+    if (ds === today) b.classList.add('today');
+    if (ds === day) b.classList.add('sel');
+    grid.append(b);
+  }
+  const foot = el('div', {className: 'cal-foot'});
+  if (!info) foot.textContent = 'Checking which days have recordings…';
+  else if (info.error) foot.textContent = 'Couldn’t check recording days: ' + info.error;
+  else foot.append(el('i'), ' Days with recordings');
+  cal.replaceChildren(head, grid, foot);
+}
+
+/* ---------- playback speed ---------- */
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+let speed = 1;
+function renderSpeeds() {
+  $('#speeds').replaceChildren(...SPEEDS.map(v => el('button', {
+    textContent: (v < 1 ? String(v).replace('0.', '.') : v) + '×',
+    className: v === speed ? 'on' : '',
+    title: v >= 8 ? 'Fast scan (keyframes only)' : v === 1 ? 'Normal speed' : '',
+    onclick: () => {
+      speed = v; renderSpeeds();
+      if (curClip) playClip(curClip, pb.current || curClip.start);
+    },
+  })));
+}
+$('#clipPrev').onclick = () => { if (!curClip) return toast('Play a clip first'); const n = neighbour(curClip, -1); n ? playClip(n) : toast('That’s the first clip'); };
+$('#clipNext').onclick = () => { if (!curClip) return toast('Play a clip first'); const n = neighbour(curClip, 1); n ? playClip(n) : toast('That’s the last clip'); };
+$('#back30').onclick = () => seek(-30);
+$('#fwd30').onclick = () => seek(30);
+$('#clipDl').onclick = () => curClip ? downloadClip(curClip) : toast('Play a clip first');
+
+/* ---------- settings dialog ---------- */
+const configured = () => cfg.hasLogin;
+function openSettings() {
+  $('#sHost').value = cfg.host; $('#sPort').value = cfg.port;
+  $('#sUser').value = cfg.user; $('#sPass').value = '';
+  $('#sPass').required = !cfg.hasLogin;
+  $('#sPass').placeholder = cfg.hasLogin ? 'saved — leave blank to keep' : '';
+  $('#sCams').replaceChildren(...cfg.cams.flatMap((c, i) => [
+    el('input', {value: c.name, id: 'cn' + i, 'aria-label': 'Camera name'}),
+    el('input', {value: c.ch, id: 'cc' + i, type: 'number', min: 1, 'aria-label': 'Channel'}),
+  ]));
+  $('#settings').showModal();
+}
+$('#settingsBtn').onclick = openSettings;
+$('#settings').addEventListener('close', async () => {
+  if ($('#settings').returnValue !== 'save') return;
+  try {
+    await saveCfg({
+      host: $('#sHost').value.trim(), port: +$('#sPort').value || 554,
+      user: $('#sUser').value.trim(), pass: $('#sPass').value,
+      cams: cfg.cams.map((c, i) => ({name: $('#cn' + i).value.trim() || c.name, ch: +$('#cc' + i).value || c.ch})),
+    });
+  } catch (e) { toast('Not saved: ' + e.message, 5000); return; }
+  dayCache.clear(); monthCache.clear();
+  $('#title').textContent = cfg.host ? 'NVR · ' + cfg.host : 'NVR';
+  if (currentView === 'live') buildLive(); else buildPlayback();
+  toast('Saved');
+});
+
+/* ---------- tabs ---------- */
+let currentView = 'live';
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  currentView = b.dataset.view;
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + currentView));
+  if (currentView === 'live') { if (pb) pb.player.stop(); buildLive(); }
+  else { stopLive(); buildPlayback(); }
+});
+
+/* ---------- go2rtc health ---------- */
+async function health() {
+  try { const r = await fetch('/api'); const j = await r.json(); $('#status').textContent = 'go2rtc ' + (j.version || 'running'); }
+  catch { $('#status').textContent = 'go2rtc not responding'; }
+}
+
+(async () => {
+  try { await loadCfg(); await migrateOldLogin(); }
+  catch (e) { $('#status').textContent = 'Server not responding'; return; }
+  $('#title').textContent = cfg.host ? 'NVR · ' + cfg.host : 'NVR';
+  buildLive(); health();
+  if (!configured()) openSettings();
+})();
+</script>
+</body>
+</html>
