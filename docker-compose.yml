@@ -1,0 +1,32 @@
+# Docker / Synology. Use the release zip (it includes bin/), or run scripts/build.sh first.
+# Then: docker compose up -d   (DSM 7.2: Container Manager > Project > Create from this folder)
+# Open http://<host>:8095  - user name "viewer", password VIEWER_PASSWORD below.
+version: "2.4"   # kept for older docker-compose (e.g. Synology DSM 6)
+
+services:
+  go2rtc:
+    image: alexxit/go2rtc:1.9.15
+    container_name: nvr-go2rtc
+    network_mode: host          # go2rtc only listens on 127.0.0.1:1986 (see go2rtc/go2rtc.yaml)
+    restart: unless-stopped
+    volumes:
+      - ./go2rtc:/config
+
+  viewer:
+    image: alpine:3.20
+    container_name: nvr-viewer
+    network_mode: host
+    restart: unless-stopped
+    depends_on: [go2rtc]
+    working_dir: /app
+    # copied out first because files copied onto a NAS often lose their "executable" flag
+    command: ["/bin/sh", "-c", "A=$$(uname -m); case $$A in x86_64) A=amd64;; aarch64) A=arm64;; esac; cp /app/bin/cctv-server-linux-$$A /tmp/cctv-server && chmod +x /tmp/cctv-server && exec /tmp/cctv-server"]
+    environment:
+      LISTEN: ":8095"
+      GO2RTC: "http://127.0.0.1:1986"
+      VIEWER_PASSWORD: "change-me"   # set a real password - it won't start until you do
+      TZ: "Europe/London"            # your NVR's time zone
+    volumes:
+      - ./bin:/app/bin:ro
+      - ./www:/app/www:ro
+      - ./data:/app/data            # NVR login is saved here (settings.json)
