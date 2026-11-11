@@ -1,0 +1,12 @@
+# go2rtc settings for the CCTV viewer. No passwords here: the viewer server
+# adds the NVR login to each stream. go2rtc only listens on this machine;
+# viewers connect through the viewer server.
+api:
+  listen: "127.0.0.1:1986"
+rtsp:
+  listen: ""     # don't re-publish streams
+webrtc:
+  listen: ""     # the viewer uses MSE over websocket
+log:
+  level: warn
+streams: {}
